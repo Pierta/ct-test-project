@@ -1,4 +1,7 @@
+using System.Net;
 using ApiClients;
+using Polly;
+using Polly.Extensions.Http;
 using Refit;
 using WeatherForecastingService.Configuration;
 using WeatherForecastingService.Helpers;
@@ -24,7 +27,11 @@ var weatherApiKey = Environment.GetEnvironmentVariable("WEATHER_API_KEY")
                     ?? throw new SystemException("Weather API KEY is required");
 builder.Services
     .AddRefitClient<IWeatherApi>()
-    .ConfigureHttpClient(c => c.BaseAddress = new Uri(weatherApiUrl));
+    .ConfigureHttpClient(c => c.BaseAddress = new Uri(weatherApiUrl))
+    .AddPolicyHandler(HttpPolicyExtensions
+        .HandleTransientHttpError()
+        .WaitAndRetryAsync(2, _ => TimeSpan.FromSeconds(3))
+    );
 
 var app = builder.Build();
 
@@ -38,6 +45,24 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.ConfigureHealthChecks();
 
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next.Invoke();
+    }
+    catch (BadHttpRequestException ex)
+    {
+        // Handle parameter binding errors
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        await context.Response.WriteAsJsonAsync(new
+        {
+            Error = "Please, specify proper parameters",
+            Details = ex.Message
+        });
+    }
+});
+
 app.MapGet("/weather", async (string city, DateTime date, IWeatherApi weatherApi) =>
     {
         var maxForecastDate = DateTime.Today.AddDays(1);
@@ -46,8 +71,10 @@ app.MapGet("/weather", async (string city, DateTime date, IWeatherApi weatherApi
             return Results.BadRequest($"Date must be on or after 2010-01-01 and less than or equal to {maxForecastDate:yyyy-MM-dd}");
         }
         
-        var weatherInformation = await weatherApi.GetWeatherData(weatherApiKey, city, date);
-        return Results.Ok(weatherInformation);
+        var weatherInformationResponse = await weatherApi.GetWeatherData(weatherApiKey, city, date);
+        return weatherInformationResponse.StatusCode == HttpStatusCode.BadRequest
+            ? Results.NotFound($"The city '{city}' could not be found") 
+            : Results.Ok(weatherInformationResponse.Content);
     })
     .WithName("GetWeatherForecast")
     .WithOpenApi();

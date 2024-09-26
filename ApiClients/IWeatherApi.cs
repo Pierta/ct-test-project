@@ -9,7 +9,7 @@ namespace ApiClients
     public interface IWeatherApi
     {
         [Get("/history.json?key={apiKey}&q={city}&dt={dateTime}")]
-        Task<WeatherDataResponse> GetWeatherData(string apiKey, string city, DateTime dateTime);
+        Task<ApiResponse<WeatherDataResponse>> GetWeatherData(string apiKey, string city, DateTime dateTime);
     }
     
     public class WeatherDataResponse
