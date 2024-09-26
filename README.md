@@ -15,10 +15,14 @@ Run
 ```shell
 ./run.sh
 ```
+then
+* go to http://localhost:8080/swagger/index.html to test the API
+* go to http://0.0.0.0:18888/login?t={dashboard_token} to see metrics/traces
+  * `dashboard_token` can be found in `open-telemetry-dashboard` container logs
 
-Rebuild and run
+Rebuild
 ```shell
-docker compose -f docker-compose.yml up -d --build weather-forecasting-service
+./rebuild.sh
 ```
 
 Clean up
