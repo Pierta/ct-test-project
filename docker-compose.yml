@@ -1,0 +1,25 @@
+﻿services:
+  weather-forecasting-service:
+    image: weather-forecasting-service
+    container_name: weather-forecasting-service
+    build:
+      context: .
+      dockerfile: WeatherForecastingService/Dockerfile
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://host.docker.internal:4317
+      OTEL_SERVICE_NAME: weather-forecasting-service
+      GIT_BRANCH_NAME: ${GIT_BRANCH_NAME}
+      GIT_COMMIT_HASH: ${GIT_COMMIT_HASH}
+      WEATHER_API_URL: https://api.weatherapi.com/v1
+      WEATHER_API_KEY: ${WEATHER_API_KEY}
+  aspire-dashboard:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:8.0.0
+    container_name: open-telemetry-dashboard
+    ports:
+      - "18888:18888"
+      - "4317:18889"
+    restart: unless-stopped
