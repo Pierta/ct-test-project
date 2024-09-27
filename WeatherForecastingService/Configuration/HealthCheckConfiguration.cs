@@ -8,6 +8,9 @@ public static class HealthCheckConfiguration
     private const string ReadinessHealthCheckName = "Readiness";
     private const string StartupHealthCheckName = "Startup";
     
+    /// <summary>
+    /// Configures 3 health checks: Liveness/Readiness/Startup
+    /// </summary>
     public static void ConfigureHealthChecks(this IEndpointRouteBuilder app)
     {
         app.MapHealthChecks($"/HealthCheck/{LivenessHealthCheckName}", new HealthCheckOptions

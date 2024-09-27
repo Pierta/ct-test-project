@@ -1,17 +1,32 @@
 using System.Net;
 using ApiClients;
+using Asp.Versioning;
+using Microsoft.Extensions.Caching.Distributed;
 using Polly;
 using Polly.Extensions.Http;
 using Refit;
 using WeatherForecastingService.Configuration;
 using WeatherForecastingService.Helpers;
+using WeatherForecastingService.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddLogging();
+
+var redisConnectionString = Environment.GetEnvironmentVariable("REDIS_CONNECTION_STRING");
+if (!string.IsNullOrWhiteSpace(redisConnectionString))
+{
+    builder.Services.AddStackExchangeRedisCache(option =>
+    {
+        option.Configuration = redisConnectionString;
+    });
+}
+else
+{
+    builder.Services.AddDistributedMemoryCache();
+}
 
 var buildInfoOptions = new BuildInfoOptions
 {
@@ -20,22 +35,24 @@ var buildInfoOptions = new BuildInfoOptions
 };
 builder.Services.ConfigureOpenTelemetry(buildInfoOptions);
 builder.Services.AddHealthChecks();
+builder.Services.ConfigureRateLimiter();
+builder.Services.ConfigureApiVersioning();
 
 var weatherApiUrl = Environment.GetEnvironmentVariable("WEATHER_API_URL")
                     ?? throw new SystemException("Weather API URL is required");
-var weatherApiKey = Environment.GetEnvironmentVariable("WEATHER_API_KEY")
-                    ?? throw new SystemException("Weather API KEY is required");
 builder.Services
     .AddRefitClient<IWeatherApi>()
     .ConfigureHttpClient(c => c.BaseAddress = new Uri(weatherApiUrl))
     .AddPolicyHandler(HttpPolicyExtensions
         .HandleTransientHttpError()
-        .WaitAndRetryAsync(2, _ => TimeSpan.FromSeconds(3))
+        .WaitAndRetryAsync(2, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)))
     );
+
+var weatherApiKey = Environment.GetEnvironmentVariable("WEATHER_API_KEY")
+                    ?? throw new SystemException("Weather API KEY is required");
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -44,48 +61,55 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.ConfigureHealthChecks();
+app.UseRateLimiter();
+app.UseMiddleware<ExceptionHandlingMiddleware>();
 
-app.Use(async (context, next) =>
-{
-    try
-    {
-        await next.Invoke();
-    }
-    catch (BadHttpRequestException ex)
-    {
-        // Handle parameter binding errors
-        context.Response.StatusCode = StatusCodes.Status400BadRequest;
-        await context.Response.WriteAsJsonAsync(new
-        {
-            Error = "Please, specify proper parameters",
-            Details = ex.Message
-        });
-    }
-});
+var apiVersionSet = app.NewApiVersionSet()
+    .HasApiVersion(new ApiVersion(1))
+    .ReportApiVersions()
+    .Build();
 
-app.MapGet("/weather", async (string city, DateTime date, IWeatherApi weatherApi) =>
+app.MapGet("api/v{version:apiVersion}/weather", async (string city, DateTime date,
+        IWeatherApi weatherApi, IDistributedCache distributedCache) =>
     {
         var maxForecastDate = DateTime.Today.AddDays(1);
         if (date < new DateTime(2010, 1, 1).Date || date > maxForecastDate)
         {
             return Results.BadRequest($"Date must be on or after 2010-01-01 and less than or equal to {maxForecastDate:yyyy-MM-dd}");
         }
+
+        var cacheKey = $"{city}-{date:yyyy-MM-dd}";
+        var cachedWeatherData = await distributedCache.GetObject<WeatherDataVm>(cacheKey);
+        if (cachedWeatherData != null)
+        {
+            return Results.Ok(cachedWeatherData);
+        }
         
         var weatherInformationResponse = await weatherApi.GetWeatherData(weatherApiKey, city, date);
-        return weatherInformationResponse.StatusCode == HttpStatusCode.BadRequest
-            ? Results.NotFound($"The city '{city}' could not be found") 
-            : Results.Ok(weatherInformationResponse.Content);
+        if (weatherInformationResponse.StatusCode == HttpStatusCode.BadRequest)
+        {
+            return Results.NotFound($"The city '{city}' could not be found");
+        }
+
+        var result = WeatherDataMapper.ToVm(weatherInformationResponse.Content);
+        await distributedCache.SetObject(cacheKey, result);
+        return Results.Ok(result);
     })
     .WithName("GetWeatherForecast")
-    .WithOpenApi();
+    .WithOpenApi()
+    .WithApiVersionSet(apiVersionSet)
+    .MapToApiVersion(1)
+    .RequireRateLimiting(RateLimiterConfiguration.RateLimiterPolicyName);
 
-app.MapGet("/version", () => new
+app.MapGet("api/v{version:apiVersion}/version", () => new
     {
         VersionHelper.AssemblyVersion,
         GitBranchName = buildInfoOptions.BranchName,
         GitCommitHash = buildInfoOptions.CommitHash
     })
     .WithName("GetVersion")
-    .WithOpenApi();
+    .WithOpenApi()
+    .WithApiVersionSet(apiVersionSet)
+    .MapToApiVersion(1);
 
 app.Run();

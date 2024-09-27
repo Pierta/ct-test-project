@@ -48,6 +48,7 @@ public static class OpenTelemetryConfiguration
                     });
 
                 builder.AddConsoleExporter();
+                builder.AddHttpClientInstrumentation();
             })
             .WithMetrics(builder =>
             {

@@ -16,10 +16,23 @@
       GIT_COMMIT_HASH: ${GIT_COMMIT_HASH}
       WEATHER_API_URL: https://api.weatherapi.com/v1
       WEATHER_API_KEY: ${WEATHER_API_KEY}
-  aspire-dashboard:
+      REDIS_CONNECTION_STRING: redis-distributed-cache
+  open-telemetry-dashboard:
     image: mcr.microsoft.com/dotnet/aspire-dashboard:8.0.0
     container_name: open-telemetry-dashboard
     ports:
       - "18888:18888"
       - "4317:18889"
     restart: unless-stopped
+  redis-distributed-cache:
+    image: redis:7
+    container_name: redis-distributed-cache
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis:/data
+    command: [ "redis-server", "--appendonly", "yes" ]
+    restart: unless-stopped
+
+volumes:
+  redis:

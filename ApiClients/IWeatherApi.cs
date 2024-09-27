@@ -40,6 +40,8 @@ namespace ApiClients
 
     public class WeatherData
     {
+        public string Date { get; set; }
+        
         public DayData Day { get; set; }
     }
 
