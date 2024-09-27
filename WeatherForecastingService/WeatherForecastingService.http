@@ -1,6 +1,0 @@
-@WeatherForecastingService_HostAddress = http://localhost:8080
-
-GET {{WeatherForecastingService_HostAddress}}/api/v1/weather?city=Moscow&date=2024-09-27
-Accept: application/json
-
-###

@@ -10,6 +10,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		clean-up.sh = clean-up.sh
 		.env = .env
 		rebuild.sh = rebuild.sh
+		HttpTests\WeatherForecastingService.http = HttpTests\WeatherForecastingService.http
+		HttpTests\run-tests.sh = HttpTests\run-tests.sh
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ApiClients", "ApiClients\ApiClients.csproj", "{D08BEF4E-3E61-4A79-AD44-A99DA59399C1}"
